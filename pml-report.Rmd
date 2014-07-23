@@ -1,0 +1,94 @@
+Predicting Activity Quality from Activity Monitors (PML July 2014)
+========================================================
+
+The goal of the project is to predict the quality of an exercise activity based on a set of control variables ("classe" is the outcome variable). 
+The data for this project came from this source: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har)
+
+This report contains the following information as requested in the assignment brief:-
+*  Describe how you built your model 
+*  How you used cross validation and what you think the expected out of sample error is 
+*  Rationale why you made the choices you did 
+
+## Data capture and Cleaning
+
+I have retrieved the training file from [https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and saved the file locally.
+
+Observing the first few columns it's noticeable there are a number of contextual features in the dataset (e.g, username and dates and times) around the observation, which although would most likely aid in the programming assignment section of the study it doesn't really play to the ethos of the study, e.g, it wouldn't be repeatable with a different data-set and meet the aim of the challenge (predicting the classe of movement) as the date and time have no bearing on the quality of the exercise.
+
+### Data Capture
+
+The csv file uses both blanks and NAs to indicate missing values.
+
+```{r dataload,cache=TRUE}
+library(ggplot2)
+library(lattice)
+library(caret)
+dataset <- read.csv("pml-training.csv", na.strings = c("NA", ""))
+```
+
+The dataset consists of `r length(dataset)` measurements and `r nrow(dataset)` observations which needs a little tidying.
+
+### Remove invalid features
+
+Removing the features outlined above that would prevent the model from being reproducible.
+```{r remove_nametime_cols,cache=TRUE}
+head(dataset[1:7])
+dataset <- subset(dataset, select=-c(X,user_name,raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp,new_window,num_window))
+```
+
+### Remove columns with high proportion of NAs
+
+A number of columns have a significant amount of missing values so these will be filtered out based on a 95% (18641 observations) threshold data availability; This reduces the included columns to 53 in total.  The remaining features/columns all have a full complement of observations to use.
+
+```{r remove_highna_cols,cache=TRUE}
+keepCols <- sapply(dataset[, seq(1, ncol(dataset), by=1)], function(x) sum(is.na(x))) < 18641
+dataset <- dataset[,keepCols]
+length(dataset)
+names(dataset)
+min(sapply(dataset[, seq(1, ncol(dataset), by=1)], function(x) sum(!is.na(x)))) # Smallest DataAvailability across revised columns
+```
+
+There are also no near zero variance predictors in the dataset to remove and skipping creation of polynomial variables.
+
+## Create Training and Testing sets
+
+Using the dataset I partition the data 60% contributing to the training set and 40% towards a test
+set.  Note the 'testing' data set for the submission part of the assignment is not used here.
+
+I have selected random forest technique although slow in comparison to other techniques it's known for it's accuracy and I have resampled using a 2 fold cross validation approach (a balance of accuracy vs performance).
+
+```{r createtrainingsets,cache=TRUE}
+set.seed(12345)
+inTrain <- createDataPartition(y=dataset$classe,p=0.60,list=FALSE)
+training <- dataset[inTrain,]
+testing <- dataset[-inTrain,]
+library(randomForest)
+library(e1071)
+trcontrol <- trainControl(method="cv", allowParallel=TRUE, number=2)
+modFit <- train(classe~., data=training,method="rf",prox=TRUE, trControl = trcontrol)
+```
+
+Apply the model to the testing dataset and plot the predictions against the actual outcomes to
+visibly see the incorrect areas.
+
+```{r measure_prediction,cache=TRUE}
+pred <- predict(modFit,testing)
+predRight <- pred==testing$classe
+modFit
+qplot(pred,testing$classe,color=predRight,data=testing,main="Prediction vs Testing result with Outcome",xlab="Prediction",ylab="Actual Testing Value")
+#varImp(modFit) #roll_belt & pitch_forearm most important variables
+```
+
+The accuracy of the model is 0.993 which yields an out of sample error value of 0.007% (1-0.993) this is shown using the confusionMatrix function below.
+
+```{r OutOfSampleError,cache=TRUE}
+confusionMatrix(data=pred,reference=testing$classe)
+```
+
+### Additional Information
+
+The source code and write-up materials are available from here:-  
+* https://github.com/scarrk/PracticalMachineLearning/tree/gh-pages
+* http://scarrk.github.io/PracticalMachineLearning/pml-report.html
+
+
